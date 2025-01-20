@@ -67,9 +67,39 @@ if [ -z "$USERNAME" ]; then
   exit 1
 fi
 
-EVENTS=$(curl --request GET -sL --url "https://api.github.com/users/$USERNAME/events")
+HTTP_CONTENT=$(curl --write-out "%{http_code}\n" --request GET -sL --url "https://api.github.com/users/$USERNAME/events")
+HTTP_STATUS=$(echo "$HTTP_CONTENT" | tail -n1)
+
+case $HTTP_STATUS in
+  0)
+    echo "Error: No Connection"
+    exit 1
+    ;;
+  200)
+    ;;
+  404)
+    echo "Error: User $USERNAME not found"
+    exit 1
+    ;;
+  403)
+    echo "Error: API rate limit exceeded"
+    exit 1
+    ;;
+  503)
+    echo "Error: Service unavailable"
+    exit 1
+    ;;
+  *)
+    echo "Error: HTTP status $HTTP_STATUS"
+    exit 1
+    ;;
+esac
+
+EVENTS=$(echo "$HTTP_CONTENT" | sed '$d')
 
 GROUPEDBY=$(echo "$EVENTS" | jq -c '.[] | {type: .type, repo: .repo.name, created_at: .created_at}' | jq -s 'group_by(.repo) | map({repo: .[0].repo, events: group_by(.type) | map({type: .[0].type, events: .})})')
+
+echo "GitHub activity for $USERNAME"
 
 for i in $(echo "$GROUPEDBY" | jq -c '.[]'); do
   REPO=$(echo "$i" | jq -r '.repo')
